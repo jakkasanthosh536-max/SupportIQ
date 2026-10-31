@@ -95,14 +95,15 @@ class KnowledgeArticle(Base):
     slug = Column(String(255), unique=True, nullable=False)
     short_description = Column(Text, nullable=False)
     content = Column(Text, nullable=False)
-    category_id = Column(Integer, ForeignKey("categories.id", ondelete="SET NULL"), nullable=True)
-    author_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    status = Column(Enum(ArticleStatus), default=ArticleStatus.PUBLISHED, nullable=False)
+    category_id = Column(Integer, ForeignKey("categories.id", ondelete="SET NULL"), nullable=True, index=True)
+    author_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    status = Column(Enum(ArticleStatus), default=ArticleStatus.PUBLISHED, nullable=False, index=True)
     is_indexed = Column(Boolean, default=True, nullable=False)
     view_count = Column(Integer, default=0, nullable=False)
     helpful_count = Column(Integer, default=0, nullable=False)
     unhelpful_count = Column(Integer, default=0, nullable=False)
-    source_document_id = Column(Integer, ForeignKey("uploaded_documents.id", ondelete="SET NULL"), nullable=True)
+    source_document_id = Column(Integer, ForeignKey("uploaded_documents.id", ondelete="SET NULL"), nullable=True, index=True)
+
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
 
@@ -133,8 +134,8 @@ class DocumentChunk(Base):
     __tablename__ = "document_chunks"
 
     id = Column(Integer, primary_key=True, index=True)
-    document_id = Column(Integer, ForeignKey("uploaded_documents.id", ondelete="CASCADE"), nullable=True)
-    article_id = Column(Integer, ForeignKey("knowledge_articles.id", ondelete="CASCADE"), nullable=True)
+    document_id = Column(Integer, ForeignKey("uploaded_documents.id", ondelete="CASCADE"), nullable=True, index=True)
+    article_id = Column(Integer, ForeignKey("knowledge_articles.id", ondelete="CASCADE"), nullable=True, index=True)
     chunk_index = Column(Integer, nullable=False)
     content = Column(Text, nullable=False)
     token_count = Column(Integer, default=0)
@@ -147,7 +148,7 @@ class Conversation(Base):
     __tablename__ = "conversations"
 
     id = Column(Integer, primary_key=True, index=True)
-    customer_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    customer_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     session_id = Column(String(100), index=True, nullable=True)
     title = Column(String(255), default="Support Conversation")
     is_escalated = Column(Boolean, default=False)
@@ -162,8 +163,8 @@ class Message(Base):
     __tablename__ = "messages"
 
     id = Column(Integer, primary_key=True, index=True)
-    conversation_id = Column(Integer, ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
-    sender_type = Column(String(20), nullable=False) # 'customer', 'ai', 'agent'
+    conversation_id = Column(Integer, ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False, index=True)
+    sender_type = Column(String(20), nullable=False, index=True) # 'customer', 'ai', 'agent'
     content = Column(Text, nullable=False)
     confidence_score = Column(Float, nullable=True)
     processing_mode = Column(String(50), default="demo_retrieval") # 'llm', 'demo_retrieval', 'abstention'
@@ -177,8 +178,8 @@ class MessageCitation(Base):
     __tablename__ = "message_citations"
 
     id = Column(Integer, primary_key=True, index=True)
-    message_id = Column(Integer, ForeignKey("messages.id", ondelete="CASCADE"), nullable=False)
-    article_id = Column(Integer, ForeignKey("knowledge_articles.id", ondelete="CASCADE"), nullable=False)
+    message_id = Column(Integer, ForeignKey("messages.id", ondelete="CASCADE"), nullable=False, index=True)
+    article_id = Column(Integer, ForeignKey("knowledge_articles.id", ondelete="CASCADE"), nullable=False, index=True)
     chunk_id = Column(Integer, ForeignKey("document_chunks.id", ondelete="SET NULL"), nullable=True)
     article_title = Column(String(255), nullable=False)
     excerpt = Column(Text, nullable=False)
@@ -192,7 +193,7 @@ class AnswerFeedback(Base):
     __tablename__ = "answer_feedback"
 
     id = Column(Integer, primary_key=True, index=True)
-    message_id = Column(Integer, ForeignKey("messages.id", ondelete="CASCADE"), nullable=False)
+    message_id = Column(Integer, ForeignKey("messages.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     rating = Column(Integer, nullable=False) # 1 for thumbs up, -1 for thumbs down
     comment = Column(Text, nullable=True)
@@ -205,13 +206,13 @@ class Ticket(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     ticket_number = Column(String(50), unique=True, index=True, nullable=False)
-    customer_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    assigned_agent_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    conversation_id = Column(Integer, ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True)
+    customer_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    assigned_agent_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    conversation_id = Column(Integer, ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True, index=True)
     subject = Column(String(255), nullable=False)
     issue_description = Column(Text, nullable=False)
     priority = Column(Enum(TicketPriority), default=TicketPriority.MEDIUM, nullable=False)
-    status = Column(Enum(TicketStatus), default=TicketStatus.OPEN, nullable=False)
+    status = Column(Enum(TicketStatus), default=TicketStatus.OPEN, nullable=False, index=True)
     escalation_reason = Column(String(255), nullable=True)
     resolution_summary = Column(Text, nullable=True)
     resolved_at = Column(DateTime(timezone=True), nullable=True)
@@ -227,7 +228,7 @@ class TicketNote(Base):
     __tablename__ = "ticket_notes"
 
     id = Column(Integer, primary_key=True, index=True)
-    ticket_id = Column(Integer, ForeignKey("tickets.id", ondelete="CASCADE"), nullable=False)
+    ticket_id = Column(Integer, ForeignKey("tickets.id", ondelete="CASCADE"), nullable=False, index=True)
     author_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     note = Column(Text, nullable=False)
     is_internal = Column(Boolean, default=True, nullable=False)
@@ -243,13 +244,14 @@ class KnowledgeGap(Base):
     question = Column(String(500), nullable=False)
     topic = Column(String(255), nullable=False)
     frequency = Column(Integer, default=1, nullable=False)
-    status = Column(Enum(GapStatus), default=GapStatus.DETECTED, nullable=False)
+    status = Column(Enum(GapStatus), default=GapStatus.DETECTED, nullable=False, index=True)
     suggested_action = Column(String(255), nullable=True)
     suggested_faq_answer = Column(Text, nullable=True)
-    related_ticket_id = Column(Integer, ForeignKey("tickets.id", ondelete="SET NULL"), nullable=True)
+    related_ticket_id = Column(Integer, ForeignKey("tickets.id", ondelete="SET NULL"), nullable=True, index=True)
     last_asked_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
 
     related_ticket = relationship("Ticket")
 

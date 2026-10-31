@@ -1,16 +1,30 @@
+import time
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from app.models.models import (
     KnowledgeArticle, Message, MessageCitation, AnswerFeedback,
     Ticket, TicketStatus, KnowledgeGap, ArticleStatus, Category, GapStatus
 )
 
+_METRICS_CACHE: Optional[Dict[str, Any]] = None
+_METRICS_CACHE_TIME: float = 0
+METRICS_CACHE_TTL: float = 10.0  # 10-second TTL for instant dashboard loading
+
+def invalidate_metrics_cache():
+    global _METRICS_CACHE_TIME
+    _METRICS_CACHE_TIME = 0
+
 class AnalyticsService:
     @staticmethod
-    def get_overview_metrics(db: Session) -> Dict[str, Any]:
-        """Compute live aggregated analytics directly from actual database records."""
+    def get_overview_metrics(db: Session, force_refresh: bool = False) -> Dict[str, Any]:
+        """Compute live aggregated analytics with in-memory caching and batch queries."""
+        global _METRICS_CACHE, _METRICS_CACHE_TIME
+        now_ts = time.time()
+        if not force_refresh and _METRICS_CACHE and (now_ts - _METRICS_CACHE_TIME < METRICS_CACHE_TTL):
+            return _METRICS_CACHE
+
         total_published = db.query(KnowledgeArticle).filter(
             KnowledgeArticle.status == ArticleStatus.PUBLISHED
         ).count()
@@ -67,33 +81,45 @@ class AnalyticsService:
         conf_scores = [m.confidence_score for m in ai_messages if m.confidence_score is not None]
         avg_confidence = round(sum(conf_scores) / len(conf_scores), 2) if conf_scores else 0.0
 
-        # Question trends (last 7 days using naive date boundaries for SQLite compatibility)
+        # Batch query for last 7 days metrics (replaces 21 separate queries with 2 batched queries)
         now = datetime.now(timezone.utc)
+        seven_days_ago = (now - timedelta(days=6)).replace(hour=0, minute=0, second=0, microsecond=0)
+
+        recent_messages = db.query(
+            Message.sender_type,
+            Message.processing_mode,
+            Message.confidence_score,
+            Message.created_at
+        ).filter(Message.created_at >= seven_days_ago).all()
+
+        recent_tickets = db.query(
+            Ticket.created_at
+        ).filter(Ticket.created_at >= seven_days_ago).all()
+
         trends: List[Dict[str, Any]] = []
         for i in range(6, -1, -1):
             day_date = (now - timedelta(days=i)).date()
-            day_start = datetime.combine(day_date, datetime.min.time())
-            day_end = datetime.combine(day_date, datetime.max.time())
             date_str = day_date.strftime("%b %d")
 
-            q_count = db.query(Message).filter(
-                Message.sender_type == "customer",
-                Message.created_at >= day_start,
-                Message.created_at <= day_end
-            ).count()
-
-            ans_count = db.query(Message).filter(
-                Message.sender_type == "ai",
-                Message.processing_mode.in_(VALID_ANSWER_MODES),
-                (Message.confidence_score >= 0.35) | (Message.confidence_score == None),
-                Message.created_at >= day_start,
-                Message.created_at <= day_end
-            ).count()
-
-            esc_count = db.query(Ticket).filter(
-                Ticket.created_at >= day_start,
-                Ticket.created_at <= day_end
-            ).count()
+            q_count = sum(
+                1 for m in recent_messages
+                if m.sender_type == "customer"
+                and m.created_at
+                and (m.created_at.date() if hasattr(m.created_at, "date") else m.created_at) == day_date
+            )
+            ans_count = sum(
+                1 for m in recent_messages
+                if m.sender_type == "ai"
+                and m.processing_mode in VALID_ANSWER_MODES
+                and ((m.confidence_score or 0) >= 0.35 or m.confidence_score is None)
+                and m.created_at
+                and (m.created_at.date() if hasattr(m.created_at, "date") else m.created_at) == day_date
+            )
+            esc_count = sum(
+                1 for t in recent_tickets
+                if t.created_at
+                and (t.created_at.date() if hasattr(t.created_at, "date") else t.created_at) == day_date
+            )
 
             trends.append({
                 "date": date_str,
@@ -102,19 +128,22 @@ class AnalyticsService:
                 "escalated": esc_count
             })
 
-        # Topic & Category distribution: include all registered categories
-        all_categories = db.query(Category).order_by(Category.name).all()
+        # Batch query for categories and distribution (replaces N*2 queries with batched queries)
+        all_categories = db.query(Category).options(selectinload(Category.articles)).order_by(Category.name).all()
+        category_citations = db.query(
+            KnowledgeArticle.category_id,
+            func.count(MessageCitation.id).label("cits")
+        ).join(MessageCitation, MessageCitation.article_id == KnowledgeArticle.id).group_by(KnowledgeArticle.category_id).all()
+        cat_cit_map = {row[0]: row[1] for row in category_citations}
+
+        all_gaps = db.query(KnowledgeGap).all()
+
         topic_distribution = []
         for cat in all_categories:
             art_count = len(cat.articles)
-            cat_cits = db.query(MessageCitation).join(KnowledgeArticle).filter(
-                KnowledgeArticle.category_id == cat.id
-            ).count()
-            # Match gaps by keyword in topic
-            first_word = cat.name.split()[0]
-            cat_gaps = db.query(KnowledgeGap).filter(
-                KnowledgeGap.topic.ilike(f"%{first_word}%")
-            ).count()
+            cat_cits = cat_cit_map.get(cat.id, 0)
+            first_word = cat.name.split()[0].lower() if cat.name else ""
+            cat_gaps = sum(1 for g in all_gaps if first_word and first_word in (g.topic or "").lower())
             inquiry_count = cat_cits + cat_gaps
             topic_distribution.append({
                 "topic": cat.name,
@@ -152,7 +181,7 @@ class AnalyticsService:
         # Recent gaps
         gaps = db.query(KnowledgeGap).order_by(KnowledgeGap.last_asked_at.desc()).limit(6).all()
 
-        return {
+        result = {
             "total_articles": total_articles,
             "total_published": total_published,
             "total_drafts": total_drafts,
@@ -178,3 +207,6 @@ class AnalyticsService:
             "top_articles": top_articles_data,
             "recent_knowledge_gaps": gaps
         }
+        _METRICS_CACHE = result
+        _METRICS_CACHE_TIME = time.time()
+        return result

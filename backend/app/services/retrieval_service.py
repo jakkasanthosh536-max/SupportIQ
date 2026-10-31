@@ -1,7 +1,7 @@
 import re
 import math
 from typing import List, Dict, Any, Optional, Tuple
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 from app.models.models import KnowledgeArticle, DocumentChunk, ArticleStatus
 from app.core.config import settings
 
@@ -96,7 +96,11 @@ class RetrievalService:
             query_tokens = [query_clean.lower()]
 
         # Fetch candidate published articles
-        article_query = db.query(KnowledgeArticle).filter(
+        article_query = db.query(KnowledgeArticle).options(
+            joinedload(KnowledgeArticle.category),
+            selectinload(KnowledgeArticle.tags),
+            selectinload(KnowledgeArticle.chunks)
+        ).filter(
             KnowledgeArticle.status == ArticleStatus.PUBLISHED
         )
         if category_id:
@@ -115,8 +119,8 @@ class RetrievalService:
             tags_text = " ".join([t.name for t in art.tags]) if art.tags else ""
             category_name = art.category.name if art.category else ""
             
-            # Combine content chunks
-            chunks = db.query(DocumentChunk).filter(DocumentChunk.article_id == art.id).all()
+            # Combine content chunks directly from preloaded relationship
+            chunks = art.chunks
             if not chunks:
                 # If no chunks explicitly exist, use the article content as a chunk
                 chunk_texts = [art.content]

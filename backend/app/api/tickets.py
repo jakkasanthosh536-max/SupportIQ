@@ -2,7 +2,7 @@ import random
 from datetime import datetime, timezone
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 from app.core.database import get_db
 from app.models.models import (
     Ticket, TicketNote, Conversation, User, UserRole,
@@ -15,6 +15,7 @@ from app.schemas.schemas import (
 )
 from app.api.deps import get_current_user, require_role, get_optional_current_user
 from app.services.gap_service import GapService
+from app.services.analytics_service import invalidate_metrics_cache
 
 router = APIRouter(prefix="/tickets", tags=["Support Tickets"])
 
@@ -29,7 +30,11 @@ def get_tickets(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    query = db.query(Ticket)
+    query = db.query(Ticket).options(
+        joinedload(Ticket.customer),
+        joinedload(Ticket.assigned_agent),
+        selectinload(Ticket.notes)
+    )
 
     if current_user.role == UserRole.CUSTOMER:
         query = query.filter(Ticket.customer_id == current_user.id)
@@ -43,6 +48,7 @@ def get_tickets(
         query = query.filter(Ticket.priority == priority)
 
     tickets = query.order_by(Ticket.created_at.desc()).all()
+
     results = []
     for t in tickets:
         resp = TicketResponse.model_validate(t)
@@ -106,6 +112,7 @@ def create_ticket(
             )
 
     db.commit()
+    invalidate_metrics_cache()
     db.refresh(ticket)
 
     resp = TicketResponse.model_validate(ticket)
@@ -121,8 +128,14 @@ def get_ticket_detail(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+    ticket = db.query(Ticket).options(
+        joinedload(Ticket.customer),
+        joinedload(Ticket.assigned_agent),
+        selectinload(Ticket.notes).joinedload(TicketNote.author),
+        joinedload(Ticket.conversation).selectinload(Conversation.messages)
+    ).filter(Ticket.id == ticket_id).first()
     if not ticket:
+
         raise HTTPException(status_code=404, detail="Ticket not found.")
 
     if current_user.role == UserRole.CUSTOMER and ticket.customer_id != current_user.id:
@@ -253,6 +266,7 @@ def update_ticket(
 
     ticket.updated_at = datetime.now(timezone.utc)
     db.commit()
+    invalidate_metrics_cache()
     db.refresh(ticket)
 
     resp = TicketResponse.model_validate(ticket)

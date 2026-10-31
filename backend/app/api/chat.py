@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from app.core.database import get_db
 from app.models.models import (
     Conversation, Message, MessageCitation, AnswerFeedback,
@@ -15,6 +15,7 @@ from app.api.deps import get_optional_current_user, get_current_user
 from app.services.retrieval_service import RetrievalService
 from app.services.ai_service import AIService
 from app.services.gap_service import GapService
+from app.services.analytics_service import invalidate_metrics_cache
 
 router = APIRouter(prefix="/chat", tags=["AI Support Chat"])
 
@@ -118,6 +119,7 @@ def send_chat_message(
     # Update conversation updated_at
     conversation.updated_at = datetime.now(timezone.utc)
     db.commit()
+    invalidate_metrics_cache()
 
     return ChatMessageResponse(
         id=ai_msg.id,
@@ -135,7 +137,7 @@ def get_conversations(
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user)
 ):
-    query = db.query(Conversation)
+    query = db.query(Conversation).options(selectinload(Conversation.messages))
     if current_user and current_user.role == UserRole.CUSTOMER:
         query = query.filter(Conversation.customer_id == current_user.id)
 
@@ -153,7 +155,9 @@ def get_conversation_detail(
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user)
 ):
-    conversation = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+    conversation = db.query(Conversation).options(
+        selectinload(Conversation.messages).selectinload(Message.citations)
+    ).filter(Conversation.id == conversation_id).first()
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found.")
 

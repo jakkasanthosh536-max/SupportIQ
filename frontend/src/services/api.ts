@@ -18,7 +18,20 @@ export function setStoredToken(token: string | null) {
   }
 }
 
-async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+// In-flight deduplication and fast in-memory cache for GET requests
+interface CacheEntry {
+  data: any;
+  expiry: number;
+}
+const getCache = new Map<string, CacheEntry>();
+const inFlightRequests = new Map<string, Promise<any>>();
+const GET_CACHE_TTL_MS = 4000; // 4 seconds short-term cache for rapid re-renders and sibling components
+
+export function clearApiCache() {
+  getCache.clear();
+}
+
+async function executeFetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const token = getStoredToken();
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string>),
@@ -76,12 +89,15 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   }
 
   if (!response.ok) {
+    if (response.status === 401) {
+      // Clear invalid/expired token
+      setStoredToken(null);
+    }
     let errorMsg = `HTTP Error ${response.status}`;
     try {
       const errJson = await response.json();
       errorMsg = errJson.detail || errJson.message || errorMsg;
     } catch {
-      // fallback to statusText
       errorMsg = response.statusText || errorMsg;
     }
     throw new Error(errorMsg);
@@ -92,6 +108,42 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   }
 
   return response.json();
+}
+
+async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  const method = (options.method || 'GET').toUpperCase();
+  const isGet = method === 'GET';
+  const token = getStoredToken();
+  const cacheKey = `${token || 'anon'}:${endpoint}`;
+
+  if (!isGet) {
+    // Mutations immediately invalidate GET cache
+    getCache.clear();
+    return executeFetch<T>(endpoint, options);
+  }
+
+  // Check valid cached entry
+  const cached = getCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiry) {
+    return cached.data as T;
+  }
+
+  // Check in-flight promise to eliminate duplicate concurrent calls
+  if (inFlightRequests.has(cacheKey)) {
+    return inFlightRequests.get(cacheKey)! as Promise<T>;
+  }
+
+  const fetchPromise = executeFetch<T>(endpoint, options)
+    .then((data) => {
+      getCache.set(cacheKey, { data, expiry: Date.now() + GET_CACHE_TTL_MS });
+      return data;
+    })
+    .finally(() => {
+      inFlightRequests.delete(cacheKey);
+    });
+
+  inFlightRequests.set(cacheKey, fetchPromise);
+  return fetchPromise;
 }
 
 export const api = {

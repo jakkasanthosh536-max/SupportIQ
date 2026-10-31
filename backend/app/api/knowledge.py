@@ -1,7 +1,7 @@
 import re
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 from app.core.database import get_db
 from app.models.models import (
     KnowledgeArticle, Category, Tag, DocumentChunk,
@@ -14,6 +14,7 @@ from app.schemas.schemas import (
 from app.api.deps import get_current_user, require_role, get_optional_current_user
 from app.services.document_service import chunk_text
 from app.services.gap_service import GapService
+from app.services.analytics_service import invalidate_metrics_cache
 
 router = APIRouter(prefix="/knowledge", tags=["Knowledge Base"])
 
@@ -55,7 +56,7 @@ def get_articles(
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user)
 ):
-    query = db.query(KnowledgeArticle)
+    query = db.query(KnowledgeArticle).options(joinedload(KnowledgeArticle.category))
 
     # Customers only see published articles
     if not current_user or current_user.role == UserRole.CUSTOMER:
@@ -85,7 +86,7 @@ def get_articles(
 
 @router.get("/categories", response_model=List[CategoryResponse])
 def get_categories(db: Session = Depends(get_db)):
-    cats = db.query(Category).all()
+    cats = db.query(Category).options(selectinload(Category.articles)).all()
     results = []
     for c in cats:
         resp = CategoryResponse.model_validate(c)
@@ -126,7 +127,10 @@ def get_article(
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user)
 ):
-    query = db.query(KnowledgeArticle)
+    query = db.query(KnowledgeArticle).options(
+        joinedload(KnowledgeArticle.category),
+        selectinload(KnowledgeArticle.tags)
+    )
     if id_or_slug.isdigit():
         article = query.filter(KnowledgeArticle.id == int(id_or_slug)).first()
     else:
@@ -204,6 +208,7 @@ def create_article(
     if article.status == ArticleStatus.PUBLISHED:
         GapService.resolve_matching_gaps(db, article.title, article.content)
 
+    invalidate_metrics_cache()
     resp = ArticleDetailResponse.model_validate(article)
     resp.category_name = article.category.name if article.category else "General"
     return resp
@@ -265,6 +270,7 @@ def update_article(
     if article.status == ArticleStatus.PUBLISHED:
         GapService.resolve_matching_gaps(db, article.title, article.content)
 
+    invalidate_metrics_cache()
     resp = ArticleDetailResponse.model_validate(article)
     resp.category_name = article.category.name if article.category else "General"
     return resp
@@ -281,4 +287,5 @@ def delete_article(
 
     db.delete(article)
     db.commit()
+    invalidate_metrics_cache()
     return None
