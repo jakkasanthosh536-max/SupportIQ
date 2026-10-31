@@ -213,6 +213,8 @@ class Ticket(Base):
     issue_description = Column(Text, nullable=False)
     priority = Column(Enum(TicketPriority), default=TicketPriority.MEDIUM, nullable=False)
     status = Column(Enum(TicketStatus), default=TicketStatus.OPEN, nullable=False, index=True)
+    category = Column(String(100), default="General", nullable=True)
+    is_demo = Column(Boolean, default=False, nullable=False, index=True)
     escalation_reason = Column(String(255), nullable=True)
     resolution_summary = Column(Text, nullable=True)
     resolved_at = Column(DateTime(timezone=True), nullable=True)

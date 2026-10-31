@@ -24,7 +24,7 @@ async def lifespan(app: FastAPI):
     # Initialize DB tables
     Base.metadata.create_all(bind=engine)
     
-    # Auto-seed if database is empty
+    # Auto-seed if database is empty or demo tickets are missing
     db = SessionLocal()
     try:
         user_count = db.query(User).count()
@@ -32,6 +32,12 @@ async def lifespan(app: FastAPI):
             print("Empty database detected. Seeding NovaStore sample data...")
             seed_database(db)
             print("NovaStore sample data seeded successfully.")
+        else:
+            from app.models.models import Ticket
+            if db.query(Ticket).filter(Ticket.ticket_number == "SUP-1001").count() == 0:
+                from app.seed_demo_tickets import seed_demo_tickets
+                print("Demo tickets not found. Seeding 10 realistic support tickets...")
+                seed_demo_tickets(db)
     except Exception as e:
         print(f"Error during initial seed check: {e}")
     finally:

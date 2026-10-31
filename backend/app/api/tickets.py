@@ -26,6 +26,8 @@ def generate_ticket_number() -> str:
 def get_tickets(
     status: Optional[TicketStatus] = None,
     priority: Optional[TicketPriority] = None,
+    category: Optional[str] = None,
+    search: Optional[str] = None,
     assigned_to_me: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -37,7 +39,15 @@ def get_tickets(
     )
 
     if current_user.role == UserRole.CUSTOMER:
-        query = query.filter(Ticket.customer_id == current_user.id)
+        is_demo_customer = current_user.email in [
+            "sarah@example.com", "customer@novastore.com", "customer@example.com", "rahul.sharma@example.com"
+        ]
+        if is_demo_customer:
+            query = query.filter(
+                (Ticket.customer_id == current_user.id) | (Ticket.is_demo == True)
+            )
+        else:
+            query = query.filter(Ticket.customer_id == current_user.id)
     else:
         if assigned_to_me:
             query = query.filter(Ticket.assigned_agent_id == current_user.id)
@@ -46,6 +56,16 @@ def get_tickets(
         query = query.filter(Ticket.status == status)
     if priority:
         query = query.filter(Ticket.priority == priority)
+    if category:
+        query = query.filter(Ticket.category.ilike(f"%{category.strip()}%"))
+    if search:
+        search_term = f"%{search.strip()}%"
+        query = query.join(Ticket.customer, isouter=True).filter(
+            (Ticket.ticket_number.ilike(search_term)) |
+            (Ticket.subject.ilike(search_term)) |
+            (Ticket.issue_description.ilike(search_term)) |
+            (User.full_name.ilike(search_term))
+        )
 
     tickets = query.order_by(Ticket.created_at.desc()).all()
 
@@ -92,6 +112,7 @@ def create_ticket(
         customer_id=current_user.id if current_user else None,
         subject=ticket_in.subject,
         issue_description=ticket_in.issue_description,
+        category=ticket_in.category or "General",
         priority=ticket_in.priority,
         status=TicketStatus.OPEN,
         conversation_id=ticket_in.conversation_id,
@@ -135,11 +156,14 @@ def get_ticket_detail(
         joinedload(Ticket.conversation).selectinload(Conversation.messages)
     ).filter(Ticket.id == ticket_id).first()
     if not ticket:
-
         raise HTTPException(status_code=404, detail="Ticket not found.")
 
     if current_user.role == UserRole.CUSTOMER and ticket.customer_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to access this ticket.")
+        is_demo_customer = current_user.email in [
+            "sarah@example.com", "customer@novastore.com", "customer@example.com", "rahul.sharma@example.com"
+        ]
+        if not (is_demo_customer and ticket.is_demo):
+            raise HTTPException(status_code=403, detail="Not authorized to access this ticket.")
 
     # Filter internal notes if customer
     notes_list = []
@@ -259,6 +283,8 @@ def update_ticket(
                     gap.status = GapStatus.RESOLVED
         if ticket_in.priority is not None:
             ticket.priority = ticket_in.priority
+        if ticket_in.category is not None:
+            ticket.category = ticket_in.category
         if ticket_in.assigned_agent_id is not None:
             ticket.assigned_agent_id = ticket_in.assigned_agent_id
         if ticket_in.resolution_summary is not None:

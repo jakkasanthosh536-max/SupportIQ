@@ -291,16 +291,18 @@ export const api = {
   },
 
   // Support Tickets
-  async getTickets(params: { status?: string; priority?: string; assigned_to_me?: boolean } = {}) {
+  async getTickets(params: { status?: string; priority?: string; category?: string; search?: string; assigned_to_me?: boolean } = {}) {
     const query = new URLSearchParams();
     if (params.status) query.append('status', params.status);
     if (params.priority) query.append('priority', params.priority);
+    if (params.category) query.append('category', params.category);
+    if (params.search) query.append('search', params.search);
     if (params.assigned_to_me) query.append('assigned_to_me', 'true');
     const qs = query.toString() ? `?${query.toString()}` : '';
     return request<SupportTicket[]>(`/tickets${qs}`);
   },
 
-  async createTicket(data: { subject: string; issue_description: string; priority?: string; conversation_id?: number; escalation_reason?: string }) {
+  async createTicket(data: { subject: string; issue_description: string; category?: string; priority?: string; conversation_id?: number; escalation_reason?: string }) {
     return request<SupportTicket>('/tickets', {
       method: 'POST',
       body: JSON.stringify(data),

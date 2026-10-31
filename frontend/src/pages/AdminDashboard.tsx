@@ -246,22 +246,32 @@ export const AdminDashboard: React.FC = () => {
             </div>
           ) : (
             <div className="space-y-2">
-              {customerTickets.slice(0, 4).map((ticket) => (
+              {customerTickets.slice(0, 6).map((ticket) => (
                 <div
                   key={ticket.id}
                   onClick={() => setPreviewTicket(ticket)}
                   className="p-3.5 rounded-xl bg-dark-950/70 border border-slate-800 hover:border-slate-700 transition cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-2"
                 >
                   <div className="space-y-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center flex-wrap gap-2">
                       <span className="font-mono text-xs font-bold text-cyan-400">
                         {ticket.ticket_number}
                       </span>
+                      {ticket.is_demo && (
+                        <span className="text-[8px] font-bold px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                          DEMO
+                        </span>
+                      )}
+                      {ticket.category && (
+                        <span className="text-[9px] font-semibold px-2 py-0.5 rounded bg-slate-800 text-purple-300 border border-purple-500/20">
+                          {ticket.category}
+                        </span>
+                      )}
                       <span
                         className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase ${
-                          ticket.priority === 'urgent'
+                          ticket.priority === 'urgent' || ticket.priority === 'high'
                             ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                            : ticket.priority === 'high'
+                            : ticket.priority === 'medium'
                             ? 'bg-amber-500/20 text-amber-400'
                             : 'bg-slate-700 text-slate-300'
                         }`}
@@ -272,6 +282,8 @@ export const AdminDashboard: React.FC = () => {
                         className={`text-[9px] font-bold px-1.5 py-0.5 rounded capitalize ${
                           ticket.status === 'resolved' || ticket.status === 'closed'
                             ? 'bg-emerald-500/20 text-emerald-400'
+                            : ticket.status === 'in_progress'
+                            ? 'bg-amber-500/20 text-amber-400'
                             : 'bg-blue-500/20 text-blue-400'
                         }`}
                       >
@@ -279,6 +291,9 @@ export const AdminDashboard: React.FC = () => {
                       </span>
                     </div>
                     <p className="text-xs font-semibold text-slate-200">{ticket.subject}</p>
+                    {ticket.customer_name && (
+                      <p className="text-[10px] text-slate-400">Customer: <span className="text-slate-300">{ticket.customer_name}</span></p>
+                    )}
                   </div>
                   <div className="flex items-center gap-3 text-xs text-slate-400 shrink-0">
                     <span className="text-[11px]">
@@ -420,6 +435,24 @@ export const AdminDashboard: React.FC = () => {
                   <p className="text-slate-200 leading-relaxed">
                     {previewTicket.issue_description}
                   </p>
+                </div>
+                {previewTicket.resolution_summary && (
+                  <div className="p-3 rounded-xl bg-emerald-950/30 border border-emerald-500/30 space-y-1">
+                    <span className="text-[10px] font-semibold text-emerald-400 block uppercase tracking-wider">
+                      Resolution Summary
+                    </span>
+                    <p className="text-emerald-200 leading-relaxed">
+                      {previewTicket.resolution_summary}
+                    </p>
+                  </div>
+                )}
+                <div className="flex items-center justify-between text-xs text-slate-400">
+                  {previewTicket.customer_name && (
+                    <p>Customer: <span className="text-slate-200 font-semibold">{previewTicket.customer_name}</span></p>
+                  )}
+                  {previewTicket.category && (
+                    <p>Category: <span className="text-purple-300 font-semibold">{previewTicket.category}</span></p>
+                  )}
                 </div>
                 {previewTicket.assigned_agent_name && (
                   <p className="text-slate-400 text-xs">

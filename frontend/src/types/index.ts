@@ -109,6 +109,8 @@ export interface SupportTicket {
   id: number;
   ticket_number: string;
   subject: string;
+  category?: string;
+  is_demo?: boolean;
   issue_description: string;
   priority: TicketPriority;
   status: TicketStatus;

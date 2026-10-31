@@ -527,56 +527,12 @@ def seed_database(db: Session):
     db.add_all([m3, m4])
     db.flush()
 
-    # 5. Seed Support Tickets
-    ticket1 = Ticket(
-        ticket_number="TICK-84210",
-        customer_id=customer_user.id,
-        assigned_agent_id=agent_user.id,
-        conversation_id=conv_polar.id,
-        subject="Antarctica shipping feasibility inquiry",
-        issue_description="Customer asked if expedited drone delivery to Antarctica is possible for winter research expedition.",
-        priority=TicketPriority.LOW,
-        status=TicketStatus.IN_PROGRESS,
-        escalation_reason="Knowledge base lacks remote polar shipping policy",
-        created_at=now - timedelta(days=1)
-    )
-    ticket2 = Ticket(
-        ticket_number="TICK-39104",
-        customer_id=customer_user.id,
-        assigned_agent_id=agent_user.id,
-        subject="Payment charged twice on order #9421",
-        issue_description="Card was charged twice when website reloaded during checkout processing.",
-        priority=TicketPriority.URGENT,
-        status=TicketStatus.RESOLVED,
-        escalation_reason="Customer request for immediate duplicate reversal",
-        resolution_summary="Inspected Stripe payment logs and issued immediate refund for duplicate charge #ch_89412.",
-        resolved_at=now - timedelta(hours=4),
-        created_at=now - timedelta(days=3)
-    )
-    ticket3 = Ticket(
-        ticket_number="TICK-52918",
-        customer_id=None,
-        assigned_agent_id=None,
-        subject="Bulk commercial pricing discount for 200 items",
-        issue_description="Enterprise buyer inquiring about 20% discount on 200 NovaStore soundbars for office rollout.",
-        priority=TicketPriority.MEDIUM,
-        status=TicketStatus.OPEN,
-        escalation_reason="B2B sales quotation requires manager approval",
-        created_at=now - timedelta(hours=8)
-    )
-    db.add_all([ticket1, ticket2, ticket3])
-    db.flush()
-
-    # Add agent note to ticket1
-    n1 = TicketNote(
-        ticket_id=ticket1.id,
-        author_id=agent_user.id,
-        note="Verified with international carrier. Remote polar delivery is only available via chartered air cargo, minimum 3 weeks lead time.",
-        is_internal=True
-    )
-    db.add(n1)
+    # 5. Seed 10 Realistic Support Tickets
+    from app.seed_demo_tickets import seed_demo_tickets
+    seed_demo_tickets(db)
 
     # 6. Seed Knowledge Gaps
+    ticket1 = db.query(Ticket).filter(Ticket.ticket_number == "SUP-1001").first()
     gap1 = KnowledgeGap(
         question="Can I get drone delivery to Antarctica by next week?",
         topic="Shipping & Delivery",

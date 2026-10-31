@@ -196,6 +196,7 @@ class FeedbackCreate(BaseModel):
 class TicketCreate(BaseModel):
     subject: str = Field(..., min_length=3)
     issue_description: str = Field(..., min_length=5)
+    category: Optional[str] = "General"
     priority: TicketPriority = TicketPriority.MEDIUM
     conversation_id: Optional[int] = None
     escalation_reason: Optional[str] = None
@@ -203,6 +204,7 @@ class TicketCreate(BaseModel):
 class TicketUpdate(BaseModel):
     subject: Optional[str] = None
     issue_description: Optional[str] = None
+    category: Optional[str] = None
     status: Optional[TicketStatus] = None
     priority: Optional[TicketPriority] = None
     assigned_agent_id: Optional[int] = None
@@ -226,6 +228,8 @@ class TicketResponse(BaseModel):
     id: int
     ticket_number: str
     subject: str
+    category: Optional[str] = "General"
+    is_demo: Optional[bool] = False
     priority: TicketPriority
     status: TicketStatus
     customer_id: Optional[int] = None
