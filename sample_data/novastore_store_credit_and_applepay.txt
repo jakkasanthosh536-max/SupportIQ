@@ -1,0 +1,11 @@
+NovaStore Billing FAQ: Split Payments with Store Credit and Apple Pay
+
+Q: Can I use both my NovaStore Store Credit and Apple Pay for a single purchase?
+A: Yes! Our checkout system fully supports split-tender transactions.
+
+How it works:
+1. When checking out on your iPhone, iPad, or Mac Safari browser, proceed to the Payment Step.
+2. Under "Apply Credits", check the box next to "Use Available Store Credit ($XX.XX)".
+3. The order total will instantly update to show the remaining unpaid balance.
+4. Select "Apple Pay" for the remaining balance and authenticate using Touch ID or Face ID.
+5. You will receive a unified invoice displaying the split payment attribution.
