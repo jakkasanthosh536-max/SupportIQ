@@ -39,8 +39,9 @@ export const LoginPage: React.FC = () => {
     setLoading(true);
     try {
       await demoLogin(demoRole);
-      navigate(demoRole === 'customer' ? '/chat' : '/dashboard');
+      navigate('/dashboard');
     } catch (err: any) {
+
       setError(err.message || 'Demo authentication failed.');
     } finally {
       setLoading(false);

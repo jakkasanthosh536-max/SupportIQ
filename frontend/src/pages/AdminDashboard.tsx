@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import {
-  AnalyticsOverview, SupportTicket, KnowledgeGap, Category
+  AnalyticsOverview, SupportTicket, KnowledgeGap, Category, KnowledgeArticle
 } from '../types';
 import { CreateFAQFromGapModal } from '../components/CreateFAQFromGapModal';
 import {
   BookOpen, MessageSquare, CheckCircle, Ticket,
   ThumbsUp, Plus, Upload, ArrowUpRight,
   AlertTriangle, ShieldCheck, Sparkles, X,
-  Clock, CheckCircle2, User as UserIcon, HelpCircle
+  Clock, CheckCircle2, User as UserIcon, HelpCircle,
+  Search, MessageSquareText, ArrowRight
 } from 'lucide-react';
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip,
@@ -17,9 +19,12 @@ import {
 } from 'recharts';
 
 export const AdminDashboard: React.FC = () => {
+  const { user } = useAuth();
   const [data, setData] = useState<AnalyticsOverview | null>(null);
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [customerTickets, setCustomerTickets] = useState<SupportTicket[]>([]);
+  const [customerArticles, setCustomerArticles] = useState<KnowledgeArticle[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,26 +38,41 @@ export const AdminDashboard: React.FC = () => {
 
   useEffect(() => {
     loadDashboard();
-  }, []);
+  }, [user?.role]);
 
   const loadDashboard = async () => {
     try {
       setLoading(true);
       setError(null);
-      const [overviewRes, ticketsRes, catsRes] = await Promise.all([
-        api.getAnalyticsOverview(),
-        api.getTickets(),
-        api.getCategories(),
-      ]);
-      setData(overviewRes);
-      setTickets(ticketsRes.slice(0, 5));
-      setCategories(catsRes);
+
+      if (user?.role === 'customer') {
+        // Customer-safe endpoints that never trigger 403 Forbidden
+        const [ticketsRes, catsRes, articlesRes] = await Promise.all([
+          api.getTickets(),
+          api.getCategories(),
+          api.getArticles(),
+        ]);
+        setCustomerTickets(ticketsRes);
+        setCategories(catsRes);
+        setCustomerArticles(articlesRes);
+      } else {
+        // Administrative / Agent Command Center endpoints
+        const [overviewRes, ticketsRes, catsRes] = await Promise.all([
+          api.getAnalyticsOverview(),
+          api.getTickets(),
+          api.getCategories(),
+        ]);
+        setData(overviewRes);
+        setTickets(ticketsRes.slice(0, 5));
+        setCategories(catsRes);
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to load dashboard metrics.');
     } finally {
       setLoading(false);
     }
   };
+
 
   const handleGapFaqCreated = (articleTitle: string) => {
     setIsFaqModalOpen(false);
@@ -73,6 +93,367 @@ export const AdminDashboard: React.FC = () => {
     );
   }
 
+  if (user?.role === 'customer') {
+    const activeTicketsCount = customerTickets.filter(
+      (t) => t.status !== 'resolved' && t.status !== 'closed'
+    ).length;
+    const resolvedTicketsCount = customerTickets.filter(
+      (t) => t.status === 'resolved' || t.status === 'closed'
+    ).length;
+
+    return (
+      <div className="space-y-6 max-w-7xl mx-auto">
+        {/* Customer Welcome Banner */}
+        <div className="p-6 rounded-2xl bg-gradient-to-r from-dark-900 via-indigo-950/40 to-dark-900 border border-slate-800 shadow-xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 -mt-4 -mr-4 w-48 h-48 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none"></div>
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                  Customer Self-Service Hub
+                </span>
+                <span className="text-slate-500 text-xs">•</span>
+                <span className="text-xs text-slate-400">NovaStore AI Support</span>
+              </div>
+              <h1 className="text-2xl font-extrabold text-slate-100 tracking-tight">
+                Welcome back, {user?.full_name || 'Valued Customer'}!
+              </h1>
+              <p className="text-xs text-slate-300 mt-1 max-w-xl">
+                Get instant, grounded answers to orders, shipping, refunds, and account questions 24/7 or manage your active support tickets.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <button
+                onClick={() => navigate('/chat')}
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-gradient-to-r from-brand-600 via-indigo-600 to-cyan-500 hover:from-brand-500 hover:to-cyan-400 text-white text-xs font-bold shadow-lg shadow-brand-500/25 transition"
+              >
+                <Sparkles className="w-4 h-4 text-cyan-200" />
+                <span>Ask AI Assistant</span>
+              </button>
+              <button
+                onClick={() => navigate('/tickets')}
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition"
+              >
+                <Ticket className="w-4 h-4 text-blue-400" />
+                <span>My Tickets</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Customer KPI Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div
+            onClick={() => navigate('/tickets')}
+            className="p-4 rounded-2xl glass-card glass-card-hover cursor-pointer border border-slate-800/80 flex flex-col justify-between"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-slate-400">Active Tickets</span>
+              <div className="p-2 rounded-xl bg-blue-500/10 border border-blue-500/20">
+                <Ticket className="w-4 h-4 text-blue-400" />
+              </div>
+            </div>
+            <div className="text-2xl font-extrabold text-slate-100">{activeTicketsCount}</div>
+            <div className="text-[11px] text-slate-400 mt-1 font-medium">
+              {activeTicketsCount === 1 ? '1 ticket in progress' : `${activeTicketsCount} tickets in progress`}
+            </div>
+          </div>
+
+          <div
+            onClick={() => navigate('/tickets')}
+            className="p-4 rounded-2xl glass-card glass-card-hover cursor-pointer border border-slate-800/80 flex flex-col justify-between"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-slate-400">Resolved Inquiries</span>
+              <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                <CheckCircle className="w-4 h-4 text-emerald-400" />
+              </div>
+            </div>
+            <div className="text-2xl font-extrabold text-slate-100">{resolvedTicketsCount}</div>
+            <div className="text-[11px] text-slate-400 mt-1 font-medium">
+              {resolvedTicketsCount} resolved tickets
+            </div>
+          </div>
+
+          <div
+            onClick={() => navigate('/knowledge')}
+            className="p-4 rounded-2xl glass-card glass-card-hover cursor-pointer border border-slate-800/80 flex flex-col justify-between"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-slate-400">Help Articles</span>
+              <div className="p-2 rounded-xl bg-purple-500/10 border border-purple-500/20">
+                <BookOpen className="w-4 h-4 text-purple-400" />
+              </div>
+            </div>
+            <div className="text-2xl font-extrabold text-slate-100">{customerArticles.length}</div>
+            <div className="text-[11px] text-slate-400 mt-1 font-medium">
+              {customerArticles.length} verified company guides
+            </div>
+          </div>
+
+          <div
+            onClick={() => navigate('/chat')}
+            className="p-4 rounded-2xl glass-card glass-card-hover cursor-pointer border border-slate-800/80 flex flex-col justify-between"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-slate-400">AI Support Assistant</span>
+              <div className="p-2 rounded-xl bg-cyan-500/10 border border-cyan-500/20">
+                <Sparkles className="w-4 h-4 text-cyan-400" />
+              </div>
+            </div>
+            <div className="text-sm font-extrabold text-emerald-400 flex items-center gap-1.5 mt-1">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span>Online & Ready</span>
+            </div>
+            <div className="text-[11px] text-slate-400 mt-1 font-medium">
+              Grounded answers with citations
+            </div>
+          </div>
+        </div>
+
+        {/* My Recent Support Tickets */}
+        <div className="p-5 rounded-2xl bg-dark-900/90 border border-slate-800/80 shadow-lg space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Ticket className="w-4 h-4 text-cyan-400" />
+              <h2 className="text-sm font-bold text-slate-100">My Support Tickets</h2>
+            </div>
+            <button
+              onClick={() => navigate('/tickets')}
+              className="text-xs font-semibold text-brand-400 hover:text-brand-300 flex items-center gap-1"
+            >
+              <span>View All Tickets</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {customerTickets.length === 0 ? (
+            <div className="p-8 text-center rounded-xl bg-dark-950/60 border border-slate-800/60 space-y-2">
+              <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto opacity-75" />
+              <p className="text-xs font-semibold text-slate-200">
+                No active support tickets found
+              </p>
+              <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
+                Have an inquiry regarding return windows, payment methods, or order tracking? Ask our AI assistant in chat!
+              </p>
+              <button
+                onClick={() => navigate('/chat')}
+                className="mt-2 px-3.5 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold shadow"
+              >
+                Open Support Chat
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {customerTickets.slice(0, 4).map((ticket) => (
+                <div
+                  key={ticket.id}
+                  onClick={() => setPreviewTicket(ticket)}
+                  className="p-3.5 rounded-xl bg-dark-950/70 border border-slate-800 hover:border-slate-700 transition cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs font-bold text-cyan-400">
+                        {ticket.ticket_number}
+                      </span>
+                      <span
+                        className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase ${
+                          ticket.priority === 'urgent'
+                            ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                            : ticket.priority === 'high'
+                            ? 'bg-amber-500/20 text-amber-400'
+                            : 'bg-slate-700 text-slate-300'
+                        }`}
+                      >
+                        {ticket.priority}
+                      </span>
+                      <span
+                        className={`text-[9px] font-bold px-1.5 py-0.5 rounded capitalize ${
+                          ticket.status === 'resolved' || ticket.status === 'closed'
+                            ? 'bg-emerald-500/20 text-emerald-400'
+                            : 'bg-blue-500/20 text-blue-400'
+                        }`}
+                      >
+                        {ticket.status.replace('_', ' ')}
+                      </span>
+                    </div>
+                    <p className="text-xs font-semibold text-slate-200">{ticket.subject}</p>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-slate-400 shrink-0">
+                    <span className="text-[11px]">
+                      {ticket.assigned_agent_name ? `Agent: ${ticket.assigned_agent_name}` : 'Pending Assignment'}
+                    </span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/tickets?id=${ticket.id}`);
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium"
+                    >
+                      View Details
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Featured Store Guides & Policies */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <BookOpen className="w-4 h-4 text-purple-400" />
+              <h2 className="text-sm font-bold text-slate-100">Verified Customer Policies & Guides</h2>
+            </div>
+            <button
+              onClick={() => navigate('/knowledge')}
+              className="text-xs font-semibold text-brand-400 hover:text-brand-300 flex items-center gap-1"
+            >
+              <span>Explore All Guides</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {customerArticles.slice(0, 6).map((art) => (
+              <div
+                key={art.id}
+                onClick={() => navigate(`/knowledge/${art.slug || art.id}`)}
+                className="p-4 rounded-2xl bg-dark-900 border border-slate-800 hover:border-slate-700 hover:bg-dark-850/60 transition cursor-pointer flex flex-col justify-between gap-3 shadow-md"
+              >
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                      {art.category_name || 'General Policy'}
+                    </span>
+                    <span className="text-[10px] text-slate-500 flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      2 min read
+                    </span>
+
+                  </div>
+                  <h3 className="text-xs font-bold text-slate-100 hover:text-cyan-300 transition line-clamp-1">
+                    {art.title}
+                  </h3>
+                  <p className="text-[11px] text-slate-400 mt-1 line-clamp-2">
+                    {art.short_description || 'Verified customer support policy for NovaStore.'}
+                  </p>
+                </div>
+                <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                  <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
+                    <ShieldCheck className="w-3 h-3" />
+                    Verified by SupportIQ
+                  </span>
+                  <span className="text-cyan-400 text-xs font-semibold hover:underline">
+                    Read Guide →
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Categories Grid */}
+        <div className="p-5 rounded-2xl bg-dark-900/90 border border-slate-800/80 shadow-lg space-y-3">
+          <h2 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+            <HelpCircle className="w-4 h-4 text-cyan-400" />
+            <span>Browse by Category</span>
+          </h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            {categories.map((cat) => (
+              <button
+                key={cat.id}
+                onClick={() => navigate(`/knowledge?category=${cat.id}`)}
+                className="p-3 rounded-xl bg-dark-950/70 border border-slate-800 hover:border-brand-500/40 hover:bg-slate-800/40 text-left transition"
+              >
+                <p className="text-xs font-bold text-slate-200">{cat.name}</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  {cat.article_count || 0} articles
+                </p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Modal if viewing ticket */}
+        {previewTicket && (
+          <div className="fixed inset-0 z-50 bg-dark-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-dark-900 border border-slate-700/80 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-mono text-xs font-bold text-cyan-400">
+                      {previewTicket.ticket_number}
+                    </span>
+                    <span
+                      className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${
+                        previewTicket.priority === 'urgent'
+                          ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                          : previewTicket.priority === 'high'
+                          ? 'bg-amber-500/20 text-amber-400'
+                          : 'bg-slate-700 text-slate-300'
+                      }`}
+                    >
+                      {previewTicket.priority}
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded font-bold capitalize bg-blue-500/10 text-blue-400">
+                      {previewTicket.status.replace('_', ' ')}
+                    </span>
+                  </div>
+                  <h3 className="text-base font-bold text-slate-100">{previewTicket.subject}</h3>
+                </div>
+                <button
+                  onClick={() => setPreviewTicket(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                <div className="p-3 rounded-xl bg-dark-950/70 border border-slate-800 space-y-1">
+                  <span className="text-[10px] font-semibold text-slate-400 block uppercase tracking-wider">
+                    Issue Description
+                  </span>
+                  <p className="text-slate-200 leading-relaxed">
+                    {previewTicket.issue_description}
+                  </p>
+                </div>
+                {previewTicket.assigned_agent_name && (
+                  <p className="text-slate-400 text-xs">
+                    Assigned Agent: <span className="text-slate-200 font-semibold">{previewTicket.assigned_agent_name}</span>
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-800">
+                <button
+                  onClick={() => setPreviewTicket(null)}
+                  className="px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={() => {
+                    const id = previewTicket.id;
+                    setPreviewTicket(null);
+                    navigate(`/tickets?id=${id}`);
+                  }}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold bg-brand-600 hover:bg-brand-500 text-white transition flex items-center gap-1.5 shadow-md shadow-brand-500/25"
+                >
+                  <span>Open Ticket Conversation</span>
+                  <ArrowUpRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   if (error || !data) {
     return (
       <div className="p-6 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-center justify-between">
@@ -86,6 +467,7 @@ export const AdminDashboard: React.FC = () => {
       </div>
     );
   }
+
 
   // Accurate stat card calculations derived strictly from database metrics
   const statCards = [

@@ -7,22 +7,43 @@ from app.models.models import (
     KnowledgeArticle, UploadedDocument, Category, User, UserRole
 )
 from app.schemas.schemas import SettingsResponse, SettingsUpdate
+from sqlalchemy import text
 from app.api.deps import require_role
 
 router = APIRouter(prefix="/settings", tags=["Application Settings"])
 
 @router.get("/status")
-def get_system_status():
+def get_system_status(db: Session = Depends(get_db)):
     """Lightweight public status endpoint for top navigation status indicator."""
+    db_connected = False
+    try:
+        db.execute(text("SELECT 1"))
+        db_connected = True
+    except Exception:
+        db_connected = False
+
     is_live = bool(settings.GEMINI_API_KEY or settings.GROQ_API_KEY or settings.OPENAI_API_KEY)
-    provider_name = settings.AI_PROVIDER.capitalize() if is_live else "Hybrid RAG"
-    model_name = settings.AI_MODEL if is_live else "Local Offline Engine"
-    mode_label = f"Live LLM ({provider_name} • {model_name})" if is_live else "Offline Grounded RAG (Zero Hallucination)"
+    
+    if not db_connected:
+        status_state = "offline"
+        mode_label = "Database Offline"
+    elif is_live:
+        provider_name = settings.AI_PROVIDER.capitalize()
+        model_name = settings.AI_MODEL or ("Gemini 1.5 Flash" if settings.AI_PROVIDER == "gemini" else "Cloud LLM")
+        status_state = "online"
+        mode_label = f"Online (Live LLM • {provider_name})"
+    else:
+        status_state = "online"
+        mode_label = "Online (Local Grounded RAG)"
+
     return {
+        "status": status_state,
         "is_live_llm": is_live,
         "ai_provider": settings.AI_PROVIDER,
-        "ai_model": model_name,
-        "mode_label": mode_label
+        "ai_model": settings.AI_MODEL if is_live else "Local Semantic BM25+Embeddings",
+        "mode_label": mode_label,
+        "database_connected": db_connected,
+        "required_env_for_cloud_llm": "Set GEMINI_API_KEY, GROQ_API_KEY, or OPENAI_API_KEY in backend/.env for generative cloud models."
     }
 
 @router.get("", response_model=SettingsResponse)

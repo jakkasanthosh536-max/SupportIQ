@@ -42,6 +42,32 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   return <>{children}</>;
 };
 
+// Role Protected Route Wrapper
+const RoleProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles: string[] }> = ({
+  children,
+  allowedRoles,
+}) => {
+  const { user, isAuthenticated, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-dark-950 flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-brand-500/20 border-t-brand-500 rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (user && !allowedRoles.includes(user.role)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <>{children}</>;
+};
+
 export const App: React.FC = () => {
   return (
     <AuthProvider>
@@ -63,13 +89,42 @@ export const App: React.FC = () => {
             <Route path="/chat" element={<ChatPage />} />
             <Route path="/knowledge" element={<KnowledgeBasePage />} />
             <Route path="/knowledge/:idOrSlug" element={<ArticleDetailPage />} />
-            <Route path="/documents" element={<DocumentUploadPage />} />
+            <Route
+              path="/documents"
+              element={
+                <RoleProtectedRoute allowedRoles={['admin', 'agent']}>
+                  <DocumentUploadPage />
+                </RoleProtectedRoute>
+              }
+            />
             <Route path="/search" element={<SmartSearchPage />} />
             <Route path="/tickets" element={<AgentWorkspacePage />} />
-            <Route path="/gaps" element={<KnowledgeGapsPage />} />
-            <Route path="/analytics" element={<AnalyticsPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
+            <Route
+              path="/gaps"
+              element={
+                <RoleProtectedRoute allowedRoles={['admin', 'agent']}>
+                  <KnowledgeGapsPage />
+                </RoleProtectedRoute>
+              }
+            />
+            <Route
+              path="/analytics"
+              element={
+                <RoleProtectedRoute allowedRoles={['admin', 'agent']}>
+                  <AnalyticsPage />
+                </RoleProtectedRoute>
+              }
+            />
+            <Route
+              path="/settings"
+              element={
+                <RoleProtectedRoute allowedRoles={['admin']}>
+                  <SettingsPage />
+                </RoleProtectedRoute>
+              }
+            />
           </Route>
+
 
           {/* Fallback */}
           <Route path="*" element={<Navigate to="/" replace />} />

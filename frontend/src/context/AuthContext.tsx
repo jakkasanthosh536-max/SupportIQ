@@ -5,9 +5,9 @@ import { api, getStoredToken } from '../services/api';
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (email: string, pass: string) => Promise<void>;
-  register: (email: string, pass: string, name: string, role?: string) => Promise<void>;
-  demoLogin: (role: UserRole) => Promise<void>;
+  login: (email: string, pass: string) => Promise<User>;
+  register: (email: string, pass: string, name: string, role?: string) => Promise<User>;
+  demoLogin: (role: UserRole) => Promise<User>;
   logout: () => void;
   isAdmin: boolean;
   isAgent: boolean;
@@ -42,20 +42,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     loadUser();
   }, []);
 
-  const login = async (email: string, pass: string) => {
+  const login = async (email: string, pass: string): Promise<User> => {
     const res = await api.login(email, pass);
     setUser(res.user);
+    return res.user;
   };
 
-  const register = async (email: string, pass: string, name: string, role: string = 'customer') => {
+  const register = async (email: string, pass: string, name: string, role: string = 'customer'): Promise<User> => {
     const res = await api.register(email, pass, name, role);
     setUser(res.user);
+    return res.user;
   };
 
-  const demoLogin = async (role: UserRole) => {
+  const demoLogin = async (role: UserRole): Promise<User> => {
     const res = await api.demoLogin(role);
     setUser(res.user);
+    return res.user;
   };
+
 
   const logout = () => {
     api.logout();

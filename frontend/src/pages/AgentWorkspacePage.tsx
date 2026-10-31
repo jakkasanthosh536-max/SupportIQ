@@ -24,6 +24,7 @@ export const AgentWorkspacePage: React.FC = () => {
   const [submittingNote, setSubmittingNote] = useState(false);
 
   const { user } = useAuth();
+  const isCustomer = user?.role === 'customer';
 
   useEffect(() => {
     loadTickets();
@@ -88,7 +89,7 @@ export const AgentWorkspacePage: React.FC = () => {
   };
 
   const handlePriorityChange = async (newPriority: TicketPriority) => {
-    if (!selectedTicket) return;
+    if (!selectedTicket || isCustomer) return;
     try {
       const updated = await api.updateTicket(selectedTicket.id, {
         priority: newPriority,
@@ -101,7 +102,7 @@ export const AgentWorkspacePage: React.FC = () => {
   };
 
   const handleAssignToMe = async () => {
-    if (!selectedTicket || !user) return;
+    if (!selectedTicket || !user || isCustomer) return;
     try {
       const updated = await api.updateTicket(selectedTicket.id, {
         assigned_agent_id: user.id,
@@ -118,7 +119,7 @@ export const AgentWorkspacePage: React.FC = () => {
     if (!selectedTicket || !newNote.trim()) return;
     setSubmittingNote(true);
     try {
-      await api.addTicketNote(selectedTicket.id, newNote.trim(), isInternalNote);
+      await api.addTicketNote(selectedTicket.id, newNote.trim(), isCustomer ? false : isInternalNote);
       setNewNote('');
       loadTicketDetail(selectedTicket.id);
     } catch (err: any) {
@@ -137,7 +138,9 @@ export const AgentWorkspacePage: React.FC = () => {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Ticket className="w-4 h-4 text-blue-400" />
-              <h2 className="text-sm font-bold text-slate-100">Ticket Queue</h2>
+              <h2 className="text-sm font-bold text-slate-100">
+                {isCustomer ? 'My Support Tickets' : 'Ticket Queue'}
+              </h2>
             </div>
             <button
               onClick={loadTickets}
@@ -248,37 +251,73 @@ export const AgentWorkspacePage: React.FC = () => {
 
               {/* Status / Priority Selectors */}
               <div className="flex items-center gap-2">
-                <select
-                  value={selectedTicket.status}
-                  onChange={(e) => handleStatusChange(e.target.value as TicketStatus)}
-                  className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-200 focus:outline-none"
-                >
-                  <option value="open">Open</option>
-                  <option value="in_progress">In Progress</option>
-                  <option value="waiting_for_customer">Waiting on Customer</option>
-                  <option value="resolved">Resolved</option>
-                  <option value="closed">Closed</option>
-                </select>
+                {isCustomer ? (
+                  <>
+                    <span
+                      className={`text-xs font-bold px-2.5 py-1 rounded-xl uppercase ${
+                        selectedTicket.priority === 'urgent'
+                          ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                          : selectedTicket.priority === 'high'
+                          ? 'bg-amber-500/20 text-amber-400'
+                          : 'bg-slate-700 text-slate-300'
+                      }`}
+                    >
+                      {selectedTicket.priority} Priority
+                    </span>
+                    <span
+                      className={`text-xs font-bold px-3 py-1 rounded-xl capitalize ${
+                        selectedTicket.status === 'resolved' || selectedTicket.status === 'closed'
+                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                          : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                      }`}
+                    >
+                      {selectedTicket.status.replace('_', ' ')}
+                    </span>
+                    {selectedTicket.status !== 'resolved' && selectedTicket.status !== 'closed' && (
+                      <button
+                        onClick={() => handleStatusChange('resolved' as TicketStatus)}
+                        className="px-3 py-1 rounded-xl bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 border border-emerald-500/40 text-xs font-semibold transition"
+                      >
+                        Mark as Resolved
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <select
+                      value={selectedTicket.status}
+                      onChange={(e) => handleStatusChange(e.target.value as TicketStatus)}
+                      className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-200 focus:outline-none"
+                    >
+                      <option value="open">Open</option>
+                      <option value="in_progress">In Progress</option>
+                      <option value="waiting_for_customer">Waiting on Customer</option>
+                      <option value="resolved">Resolved</option>
+                      <option value="closed">Closed</option>
+                    </select>
 
-                <select
-                  value={selectedTicket.priority}
-                  onChange={(e) => handlePriorityChange(e.target.value as TicketPriority)}
-                  className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-200 focus:outline-none"
-                >
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
-                  <option value="urgent">Urgent</option>
-                </select>
+                    <select
+                      value={selectedTicket.priority}
+                      onChange={(e) => handlePriorityChange(e.target.value as TicketPriority)}
+                      className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-200 focus:outline-none"
+                    >
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                      <option value="urgent">Urgent</option>
+                    </select>
 
-                <button
-                  onClick={handleAssignToMe}
-                  className="px-3 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-semibold text-xs transition"
-                >
-                  Assign to Me
-                </button>
+                    <button
+                      onClick={handleAssignToMe}
+                      className="px-3 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-semibold text-xs transition"
+                    >
+                      Assign to Me
+                    </button>
+                  </>
+                )}
               </div>
             </div>
+
 
             {/* Scrollable Ticket Detail Body */}
             <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 space-y-6">
@@ -352,12 +391,12 @@ export const AgentWorkspacePage: React.FC = () => {
               {/* Notes Stream */}
               <div className="space-y-3">
                 <span className="text-[11px] uppercase font-bold text-slate-400 tracking-wider">
-                  Internal Agent Notes ({selectedTicket.notes?.length || 0})
+                  {isCustomer ? 'Conversation & Responses' : 'Internal Notes & Responses'} ({selectedTicket.notes?.length || 0})
                 </span>
 
                 <div className="space-y-2">
                   {selectedTicket.notes?.length === 0 ? (
-                    <p className="text-xs text-slate-500 italic">No notes added yet.</p>
+                    <p className="text-xs text-slate-500 italic">No notes or responses added yet.</p>
                   ) : (
                     selectedTicket.notes?.map((n) => (
                       <div
@@ -367,7 +406,7 @@ export const AgentWorkspacePage: React.FC = () => {
                         <div className="flex items-center justify-between text-[11px]">
                           <span className="font-bold text-slate-200 flex items-center gap-1.5">
                             <Shield className="w-3 h-3 text-purple-400" />
-                            {n.author_name || 'Agent'}
+                            {n.author_name || (isCustomer ? 'Support Agent' : 'Agent')}
                           </span>
                           <span className="text-slate-500 text-[10px]">
                             {formatDisplayDateTime(n.created_at)}
@@ -379,37 +418,48 @@ export const AgentWorkspacePage: React.FC = () => {
                   )}
                 </div>
 
-                {/* Add Note Form */}
+                {/* Add Note / Customer Reply Form */}
                 <form onSubmit={handleAddNote} className="pt-2 space-y-2">
                   <textarea
                     rows={3}
                     value={newNote}
                     onChange={(e) => setNewNote(e.target.value)}
-                    placeholder="Add an internal note or resolution comment..."
+                    placeholder={
+                      isCustomer
+                        ? 'Type a reply to the customer support team...'
+                        : 'Add an internal note or resolution comment...'
+                    }
                     className="w-full bg-dark-950/80 border border-slate-700/80 rounded-xl p-3 text-xs text-slate-100 placeholder-slate-400 focus:outline-none focus:border-brand-500 shadow-inner"
                     required
                   />
                   <div className="flex items-center justify-between">
-                    <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={isInternalNote}
-                        onChange={(e) => setIsInternalNote(e.target.checked)}
-                        className="rounded bg-slate-800 border-slate-700 text-brand-500 focus:ring-brand-500"
-                      />
-                      <span>Internal agent note (hidden from customer)</span>
-                    </label>
+                    {!isCustomer ? (
+                      <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={isInternalNote}
+                          onChange={(e) => setIsInternalNote(e.target.checked)}
+                          className="rounded bg-slate-800 border-slate-700 text-brand-500 focus:ring-brand-500"
+                        />
+                        <span>Internal agent note (hidden from customer)</span>
+                      </label>
+                    ) : (
+                      <span className="text-[11px] text-slate-400">
+                        Replying as {user?.full_name || 'Customer'}
+                      </span>
+                    )}
                     <button
                       type="submit"
                       disabled={submittingNote || !newNote.trim()}
                       className="px-4 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs flex items-center gap-1.5 transition disabled:opacity-50"
                     >
                       <Send className="w-3.5 h-3.5" />
-                      <span>{submittingNote ? 'Posting...' : 'Post Note'}</span>
+                      <span>{submittingNote ? 'Sending...' : isCustomer ? 'Send Reply' : 'Post Note'}</span>
                     </button>
                   </div>
                 </form>
               </div>
+
             </div>
           </div>
         )}

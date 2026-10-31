@@ -208,34 +208,48 @@ def update_ticket(
     ticket_id: int,
     ticket_in: TicketUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.AGENT))
+    current_user: User = Depends(get_current_user)
 ):
     ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found.")
 
-    if ticket_in.subject is not None:
-        ticket.subject = ticket_in.subject
-    if ticket_in.issue_description is not None:
-        ticket.issue_description = ticket_in.issue_description
-    if ticket_in.status is not None:
-        ticket.status = ticket_in.status
-        if ticket_in.status in [TicketStatus.RESOLVED, TicketStatus.CLOSED]:
+    if current_user.role == UserRole.CUSTOMER:
+        if ticket.customer_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Not authorized to update this ticket.")
+        # Customers can only resolve or close their own ticket
+        if ticket_in.status:
+            if ticket_in.status not in [TicketStatus.RESOLVED, TicketStatus.CLOSED]:
+                raise HTTPException(status_code=403, detail="Customers can only mark tickets as resolved or closed.")
+            ticket.status = ticket_in.status
             if not ticket.resolved_at:
                 ticket.resolved_at = datetime.now(timezone.utc)
-            # Auto-resolve any knowledge gaps directly linked to this ticket
-            linked_gaps = db.query(KnowledgeGap).filter(
-                KnowledgeGap.related_ticket_id == ticket.id,
-                KnowledgeGap.status.in_([GapStatus.DETECTED, GapStatus.REVIEWED])
-            ).all()
-            for gap in linked_gaps:
-                gap.status = GapStatus.RESOLVED
-    if ticket_in.priority is not None:
-        ticket.priority = ticket_in.priority
-    if ticket_in.assigned_agent_id is not None:
-        ticket.assigned_agent_id = ticket_in.assigned_agent_id
-    if ticket_in.resolution_summary is not None:
-        ticket.resolution_summary = ticket_in.resolution_summary
+        if ticket_in.priority is not None or ticket_in.assigned_agent_id is not None:
+            raise HTTPException(status_code=403, detail="Customers cannot change ticket priority or assign agents.")
+    else:
+        # Admins and agents have full control
+        if ticket_in.subject is not None:
+            ticket.subject = ticket_in.subject
+        if ticket_in.issue_description is not None:
+            ticket.issue_description = ticket_in.issue_description
+        if ticket_in.status is not None:
+            ticket.status = ticket_in.status
+            if ticket_in.status in [TicketStatus.RESOLVED, TicketStatus.CLOSED]:
+                if not ticket.resolved_at:
+                    ticket.resolved_at = datetime.now(timezone.utc)
+                # Auto-resolve any knowledge gaps directly linked to this ticket
+                linked_gaps = db.query(KnowledgeGap).filter(
+                    KnowledgeGap.related_ticket_id == ticket.id,
+                    KnowledgeGap.status.in_([GapStatus.DETECTED, GapStatus.REVIEWED])
+                ).all()
+                for gap in linked_gaps:
+                    gap.status = GapStatus.RESOLVED
+        if ticket_in.priority is not None:
+            ticket.priority = ticket_in.priority
+        if ticket_in.assigned_agent_id is not None:
+            ticket.assigned_agent_id = ticket_in.assigned_agent_id
+        if ticket_in.resolution_summary is not None:
+            ticket.resolution_summary = ticket_in.resolution_summary
 
     ticket.updated_at = datetime.now(timezone.utc)
     db.commit()
@@ -253,17 +267,28 @@ def add_ticket_note(
     ticket_id: int,
     note_in: TicketNoteCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.AGENT))
+    current_user: User = Depends(get_current_user)
 ):
     ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found.")
 
+    if current_user.role == UserRole.CUSTOMER:
+        if ticket.customer_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Not authorized to post notes on this ticket.")
+        # Customer notes are always public replies
+        is_internal = False
+        # If ticket was waiting on customer, move to in_progress
+        if ticket.status == TicketStatus.WAITING_FOR_CUSTOMER:
+            ticket.status = TicketStatus.IN_PROGRESS
+    else:
+        is_internal = note_in.is_internal
+
     note = TicketNote(
         ticket_id=ticket.id,
         author_id=current_user.id,
-        note=note_in.note,
-        is_internal=note_in.is_internal
+        note=note_in.note.strip(),
+        is_internal=is_internal
     )
     db.add(note)
     db.commit()
@@ -272,3 +297,4 @@ def add_ticket_note(
     resp = TicketNoteResponse.model_validate(note)
     resp.author_name = current_user.full_name
     return resp
+

@@ -12,24 +12,41 @@ import {
 import { api } from '../services/api';
 
 export const MainLayout: React.FC = () => {
-  const { user, logout, demoLogin, isAdmin, isAgent } = useAuth();
+  const { user, logout, demoLogin, isAdmin, isAgent, isCustomer } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [searchVal, setSearchVal] = useState('');
   const [showRoleMenu, setShowRoleMenu] = useState(false);
-  const [systemStatus, setSystemStatus] = useState<{ is_live_llm: boolean; mode_label: string } | null>(null);
+  const [systemStatus, setSystemStatus] = useState<{
+    status?: string;
+    is_live_llm: boolean;
+    mode_label: string;
+    ai_provider?: string;
+  } | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
 
   React.useEffect(() => {
+    let isMounted = true;
     async function fetchStatus() {
       try {
         const s = await api.getSystemStatus();
-        setSystemStatus(s);
+        if (isMounted) setSystemStatus(s);
       } catch (err) {
-        setSystemStatus({ is_live_llm: false, mode_label: 'Offline Grounded RAG (Zero Hallucination)' });
+        if (isMounted) {
+          setSystemStatus({
+            status: 'offline',
+            is_live_llm: false,
+            mode_label: 'Offline (Server Unreachable)',
+          });
+        }
       }
     }
     fetchStatus();
+    const interval = setInterval(fetchStatus, 30000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
   }, []);
 
   const handleGlobalSearch = (e: React.FormEvent) => {
@@ -40,23 +57,32 @@ export const MainLayout: React.FC = () => {
   };
 
   const navItems = [
-    { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, role: 'agent' },
-    { label: 'AI Support Chat', path: '/chat', icon: MessageSquareText },
-    { label: 'Knowledge Base', path: '/knowledge', icon: BookOpen },
-    { label: 'Smart Search', path: '/search', icon: Search },
-    { label: 'Support Tickets', path: '/tickets', icon: Ticket, role: 'agent' },
-    { label: 'Knowledge Gaps', path: '/gaps', icon: AlertTriangle, role: 'agent', badge: 'New' },
-    { label: 'Document Center', path: '/documents', icon: FileUp, role: 'agent' },
-    { label: 'Analytics', path: '/analytics', icon: BarChart3, role: 'agent' },
-    { label: 'Settings', path: '/settings', icon: Settings, role: 'admin' },
+    {
+      label: user?.role === 'customer' ? 'Customer Portal' : 'Command Center',
+      path: '/dashboard',
+      icon: LayoutDashboard,
+      roles: ['admin', 'agent', 'customer'],
+    },
+    { label: 'AI Support Chat', path: '/chat', icon: MessageSquareText, roles: ['admin', 'agent', 'customer'] },
+    { label: 'Knowledge Base', path: '/knowledge', icon: BookOpen, roles: ['admin', 'agent', 'customer'] },
+    { label: 'Smart Search', path: '/search', icon: Search, roles: ['admin', 'agent', 'customer'] },
+    {
+      label: user?.role === 'customer' ? 'My Support Tickets' : 'Support Tickets',
+      path: '/tickets',
+      icon: Ticket,
+      roles: ['admin', 'agent', 'customer'],
+    },
+    { label: 'Knowledge Gaps', path: '/gaps', icon: AlertTriangle, roles: ['admin', 'agent'], badge: 'New' },
+    { label: 'Document Center', path: '/documents', icon: FileUp, roles: ['admin', 'agent'] },
+    { label: 'Analytics', path: '/analytics', icon: BarChart3, roles: ['admin', 'agent'] },
+    { label: 'Settings', path: '/settings', icon: Settings, roles: ['admin'] },
   ];
 
   const filteredNavItems = navItems.filter((item) => {
-    if (!item.role) return true;
-    if (item.role === 'admin') return isAdmin;
-    if (item.role === 'agent') return isAgent;
-    return true;
+    if (!user) return false;
+    return item.roles.includes(user.role);
   });
+
 
   return (
     <div className="h-screen max-h-screen bg-dark-950 text-slate-100 flex flex-col font-sans overflow-hidden">
@@ -174,9 +200,10 @@ export const MainLayout: React.FC = () => {
                     Quick Role Switcher
                   </div>
                   <button
-                    onClick={() => {
-                      demoLogin('admin');
+                    onClick={async () => {
+                      await demoLogin('admin');
                       setShowRoleMenu(false);
+                      navigate('/dashboard');
                     }}
                     className={`w-full text-left px-2.5 py-2 rounded-lg hover:bg-brand-600/20 flex items-center gap-2 ${
                       user?.role === 'admin' ? 'text-brand-300 font-semibold' : 'text-slate-300'
@@ -186,9 +213,10 @@ export const MainLayout: React.FC = () => {
                     <span>Administrator</span>
                   </button>
                   <button
-                    onClick={() => {
-                      demoLogin('agent');
+                    onClick={async () => {
+                      await demoLogin('agent');
                       setShowRoleMenu(false);
+                      navigate('/dashboard');
                     }}
                     className={`w-full text-left px-2.5 py-2 rounded-lg hover:bg-brand-600/20 flex items-center gap-2 ${
                       user?.role === 'agent' ? 'text-brand-300 font-semibold' : 'text-slate-300'
@@ -198,9 +226,10 @@ export const MainLayout: React.FC = () => {
                     <span>Support Agent</span>
                   </button>
                   <button
-                    onClick={() => {
-                      demoLogin('customer');
+                    onClick={async () => {
+                      await demoLogin('customer');
                       setShowRoleMenu(false);
+                      navigate('/dashboard');
                     }}
                     className={`w-full text-left px-2.5 py-2 rounded-lg hover:bg-brand-600/20 flex items-center gap-2 ${
                       user?.role === 'customer' ? 'text-brand-300 font-semibold' : 'text-slate-300'
@@ -248,16 +277,29 @@ export const MainLayout: React.FC = () => {
               <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-dark-950/80 border border-slate-700/60 text-xs">
                 <span
                   className={`w-2 h-2 rounded-full animate-pulse ${
-                    systemStatus?.is_live_llm ? 'bg-purple-400' : 'bg-cyan-400'
+                    systemStatus?.status === 'offline'
+                      ? 'bg-rose-500 shadow-rose-500/50 shadow'
+                      : systemStatus?.is_live_llm
+                      ? 'bg-purple-400 shadow-purple-500/50 shadow'
+                      : 'bg-emerald-400 shadow-emerald-500/50 shadow'
                   }`}
                 ></span>
                 <span className="text-slate-300 font-medium text-[11px]">
                   Engine:{' '}
-                  <span className={systemStatus?.is_live_llm ? 'text-purple-300' : 'text-cyan-300'}>
-                    {systemStatus?.mode_label || 'Grounded RAG (Offline Local Engine)'}
+                  <span
+                    className={
+                      systemStatus?.status === 'offline'
+                        ? 'text-rose-400 font-semibold'
+                        : systemStatus?.is_live_llm
+                        ? 'text-purple-300 font-semibold'
+                        : 'text-emerald-300 font-semibold'
+                    }
+                  >
+                    {systemStatus?.mode_label || 'Online (Local Grounded RAG)'}
                   </span>
                 </span>
               </div>
+
 
               <button
                 onClick={() => navigate('/chat')}
